@@ -2,14 +2,14 @@ import { type NextRequest, NextResponse } from "next/server"
 import { CartModel } from "@/lib/models/Cart"
 import { authenticateToken } from "@/lib/auth/middleware"
 
-export async function PUT(request: NextRequest, { params }: { params: { productId: string } }) {
+export async function PUT(request: NextRequest) {
   try {
     const user = await authenticateToken(request)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const productId = Number.parseInt(params.productId)
+    const productId = Number.parseInt(request.nextUrl.pathname.split("/").pop()!)
     const { quantity } = await request.json()
 
     const cartItem = await CartModel.updateQuantity(user.id, productId, quantity)
@@ -20,14 +20,14 @@ export async function PUT(request: NextRequest, { params }: { params: { productI
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { productId: string } }) {
+export async function DELETE(request: NextRequest) {
   try {
     const user = await authenticateToken(request)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const productId = Number.parseInt(params.productId)
+    const productId = Number.parseInt(request.nextUrl.pathname.split("/").pop()!)
     await CartModel.removeItem(user.id, productId)
 
     return NextResponse.json({ success: true })

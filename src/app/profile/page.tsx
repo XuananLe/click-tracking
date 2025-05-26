@@ -1,5 +1,5 @@
 "use client"
-import { useRouter } from "next/router"
+// import { useRouter } from "next/router"
 // import { useAuth } from "@/context/AuthContext"
 // import { useCart } from "@/context/CartContext"
 // import { CheckoutForm } from "@/components/CheckoutForm"
@@ -7,7 +7,7 @@ import { useRouter } from "next/router"
 // import { UserProfile } from "@/components/UserProfile"
 
 const ProfilePage = () => {
-  const router = useRouter()
+  // const router = useRouter()
   // const { user, logout } = useAuth()
   // const { cartItems, totalAmount } = useCart()
 

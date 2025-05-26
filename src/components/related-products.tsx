@@ -76,7 +76,7 @@ export default function RelatedProducts({
 
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-      {relatedProducts.map((product : Product) => (
+      {relatedProducts.map((product) => (
         <Card key={product.id} className="overflow-hidden">
           <div className="relative">
             <Link href={`/product/${product.id}`} onClick={() => handleRelatedProductClick(product.id)}>

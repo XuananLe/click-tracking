@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
 
 const sql = neon(process.env.DATABASE_URL!)
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest) {
   try {
-    const productId = Number.parseInt(params.id)
+    const productId =Number.parseFloat(request.nextUrl.pathname.split("/").pop())
 
     if (isNaN(productId)) {
       return NextResponse.json({ error: "Invalid product ID" }, { status: 400 })
