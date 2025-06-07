@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ShoppingCart, Eye } from "lucide-react"
 import { useTracker } from "@/lib/use-tracker"
-import { Product } from "@/lib/models/Product"
+import { useCart } from "@/context/CartContext"
 
 export default function RelatedProducts({
   currentProductId,
@@ -18,6 +18,7 @@ export default function RelatedProducts({
   category: string
 }) {
   const { trackEvent } = useTracker()
+  const { addToCart } = useCart()
   const hasTrackedImpressionRef = useRef(false)
   const [products, setProducts] = useState<any[]>([])
 
@@ -81,7 +82,7 @@ export default function RelatedProducts({
           <div className="relative">
             <Link href={`/product/${product.id}`} onClick={() => handleRelatedProductClick(product.id)}>
               <Image
-                src={product.image || "https://placehold.co/300x300"}
+                src={product.image || "/placeholder.svg"}
                 alt={product.name}
                 width={300}
                 height={300}
@@ -143,6 +144,7 @@ export default function RelatedProducts({
                       timestamp: new Date().toISOString(),
                     },
                   })
+                  addToCart(product.id, product.name, Number(product.price), 1)
                 }}
               >
                 <ShoppingCart className="mr-2 h-4 w-4" />

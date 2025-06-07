@@ -14,11 +14,13 @@ import { useTracker } from "@/lib/use-tracker"
 import Header from "@/components/header"
 import Footer from "@/components/footer"
 import RelatedProducts from "@/components/related-products"
+import { useCart } from "@/context/CartContext"
 
 export default function ProductDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { trackEvent } = useTracker()
+  const { addToCart } = useCart()
   const [product, setProduct] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [quantity, setQuantity] = useState(1)
@@ -137,6 +139,8 @@ export default function ProductDetailPage() {
           timestamp: new Date().toISOString(),
         },
       })
+
+      addToCart(product.id, product.name, Number(product.price), quantity)
     }
   }
 
@@ -241,7 +245,7 @@ export default function ProductDetailPage() {
             >
               <div className="overflow-hidden rounded-lg border bg-white">
                 <Image
-                  src={product.image || "https://placehold.co/300x300"}
+                  src={product.image || "/placeholder.svg"}
                   alt={product.name}
                   width={500}
                   height={500}
@@ -442,9 +446,9 @@ export default function ProductDetailPage() {
               data-section="reviews"
               onMouseEnter={handleSectionMouseEnter}
             >
-              <div className="rounded-lg border p-6">
+              {/* <div className="rounded-lg border p-6">
                 <h3 className="mb-4 text-lg font-semibold">Đánh giá từ khách hàng</h3>
-                {product.reviews && product.reviews.length > 0 ? (
+                {product.reviews.length > 0 ? (
                   <div className="space-y-4">
                     {product.reviews.map((review: any) => (
                       <div key={review.id} className="space-y-2 border-b pb-4 last:border-0">
@@ -469,7 +473,7 @@ export default function ProductDetailPage() {
                 ) : (
                   <p className="text-muted-foreground">Chưa có đánh giá nào cho sản phẩm này.</p>
                 )}
-              </div>
+              </div> */}
             </TabsContent>
           </Tabs>
 

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Heart, ShoppingCart, Eye } from "lucide-react"
 import { useTracker } from "@/lib/use-tracker"
+import { useCart } from "@/context/CartContext"
 
 interface Product {
   id: number
@@ -27,6 +28,7 @@ export default function ProductList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { trackEvent } = useTracker()
+  const { addToCart } = useCart()
 
   // Fetch products from API
   useEffect(() => {
@@ -47,7 +49,7 @@ export default function ProductList() {
             id: 1,
             name: "Wireless Headphones",
             price: 129.99,
-            image_url: "https://placehold.co/300x300",
+            image_url: "/placeholder.svg?height=300&width=300",
             category: "Electronics",
             rating: 4.5,
             is_new: true,
@@ -58,7 +60,7 @@ export default function ProductList() {
             id: 2,
             name: "Smart Watch",
             price: 199.99,
-            image_url: "https://placehold.co/300x300",
+            image_url: "/placeholder.svg?height=300&width=300",
             category: "Electronics",
             rating: 4.2,
             is_new: true,
@@ -145,7 +147,7 @@ export default function ProductList() {
                   onClick={() => handleProductClick(product.id, "view_details")}
                 >
                   <Image
-                    src={product.image_url || "https://placehold.co/300x300"}
+                    src={product.image_url || "/placeholder.svg"}
                     alt={product.name}
                     width={300}
                     height={300}
@@ -217,7 +219,10 @@ export default function ProductList() {
               <CardFooter className="p-4 pt-0">
                 <Button
                   className="w-full"
-                  onClick={() => handleProductClick(product.id, "add_to_cart")}
+                  onClick={() => {
+                    handleProductClick(product.id, "add_to_cart")
+                    addToCart(product.id, product.name, Number(product.price), 1)
+                  }}
                   disabled={product.stock === 0}
                 >
                   <ShoppingCart className="mr-2 h-4 w-4" />

@@ -15,6 +15,16 @@ type SessionData = {
   events: number
   referrer: string
   entryPage: string
+  userAgent: string
+  language: string
+  timezone: string
+  screenResolution: string
+  viewportSize: string
+  deviceType: string
+  browser: string
+  os: string
+  connectionType?: string
+  isReturningUser: boolean
 }
 
 type TrackingContextType = {
@@ -22,6 +32,10 @@ type TrackingContextType = {
   trackEvent: (event: TrackingEvent) => void
   clearEvents: () => void
   sessionData: SessionData | null
+  trackPageView: (additionalData?: Record<string, any>) => void
+  trackScrollDepth: (depth: number) => void
+  trackTimeOnPage: (duration: number) => void
+  trackUserInteraction: (interaction: string, element: string, data?: Record<string, any>) => void
 }
 
 const TrackingContext = createContext<TrackingContextType | undefined>(undefined)
@@ -29,6 +43,57 @@ const TrackingContext = createContext<TrackingContextType | undefined>(undefined
 // Generate a unique session ID
 const generateSessionId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2)
+}
+
+// Detect device type
+const getDeviceType = () => {
+  const userAgent = navigator.userAgent.toLowerCase()
+  if (/tablet|ipad|playbook|silk/.test(userAgent)) {
+    return "tablet"
+  }
+  if (/mobile|iphone|ipod|android|blackberry|opera|mini|windows\sce|palm|smartphone|iemobile/.test(userAgent)) {
+    return "mobile"
+  }
+  return "desktop"
+}
+
+// Detect browser
+const getBrowser = () => {
+  const userAgent = navigator.userAgent
+  if (userAgent.includes("Chrome")) return "Chrome"
+  if (userAgent.includes("Firefox")) return "Firefox"
+  if (userAgent.includes("Safari")) return "Safari"
+  if (userAgent.includes("Edge")) return "Edge"
+  if (userAgent.includes("Opera")) return "Opera"
+  return "Unknown"
+}
+
+// Detect OS
+const getOS = () => {
+  const userAgent = navigator.userAgent
+  if (userAgent.includes("Windows")) return "Windows"
+  if (userAgent.includes("Mac")) return "macOS"
+  if (userAgent.includes("Linux")) return "Linux"
+  if (userAgent.includes("Android")) return "Android"
+  if (userAgent.includes("iOS")) return "iOS"
+  return "Unknown"
+}
+
+// Get connection type
+const getConnectionType = () => {
+  const connection =
+    (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection
+  return connection ? connection.effectiveType : "unknown"
+}
+
+// Check if returning user
+const isReturningUser = () => {
+  const hasVisited = localStorage.getItem("has_visited")
+  if (!hasVisited) {
+    localStorage.setItem("has_visited", "true")
+    return false
+  }
+  return true
 }
 
 export function TrackingProvider({ children }: { children: ReactNode }) {
@@ -40,6 +105,10 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
   const recentEventsRef = useRef<Record<string, number>>({})
   const eventsQueueRef = useRef<TrackingEvent[]>([])
   const isProcessingQueueRef = useRef(false)
+  const pageStartTimeRef = useRef<number>(0)
+  const maxScrollDepthRef = useRef<number>(0)
+  const mouseMovementsRef = useRef<Array<{ x: number; y: number; timestamp: number }>>([])
+  const clickHeatmapRef = useRef<Array<{ x: number; y: number; timestamp: number; element: string }>>([])
 
   // Initialize or restore session
   useEffect(() => {
@@ -92,12 +161,23 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         events: 0,
         referrer: document.referrer,
         entryPage: window.location.pathname,
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        screenResolution: `${screen.width}x${screen.height}`,
+        viewportSize: `${window.innerWidth}x${window.innerHeight}`,
+        deviceType: getDeviceType(),
+        browser: getBrowser(),
+        os: getOS(),
+        connectionType: getConnectionType(),
+        isReturningUser: isReturningUser(),
       }
       setSessionData(newSession)
       localStorage.setItem("user_session", JSON.stringify(newSession))
     }
 
     initializeSession()
+    pageStartTimeRef.current = Date.now()
 
     // Set up activity tracking
     const resetActivityTimeout = () => {
@@ -116,6 +196,9 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
               pageViews: sessionData.pageViews,
               events: sessionData.events,
               reason: "inactivity",
+              maxScrollDepth: maxScrollDepthRef.current,
+              mouseMovements: mouseMovementsRef.current.length,
+              clickHeatmap: clickHeatmapRef.current,
               timestamp: new Date().toISOString(),
             },
           }
@@ -129,8 +212,8 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
       }, idleTimeoutDuration)
     }
 
-    // Track user activity
-    const trackActivity = () => {
+    // Track user activity with more detailed information
+    const trackActivity = (eventType: string, data?: Record<string, any>) => {
       if (sessionData) {
         const updatedSession = {
           ...sessionData,
@@ -139,34 +222,169 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         setSessionData(updatedSession)
         localStorage.setItem("user_session", JSON.stringify(updatedSession))
         resetActivityTimeout()
+
+        // Track specific activity
+        if (eventType && data) {
+          trackEvent({
+            type: eventType,
+            data: {
+              ...data,
+              timestamp: new Date().toISOString(),
+              sessionId: sessionData.sessionId,
+            },
+          })
+        }
+      }
+    }
+
+    // Mouse movement tracking
+    const handleMouseMove = (e: MouseEvent) => {
+      const now = Date.now()
+      mouseMovementsRef.current.push({
+        x: e.clientX,
+        y: e.clientY,
+        timestamp: now,
+      })
+
+      // Keep only last 100 movements to avoid memory issues
+      if (mouseMovementsRef.current.length > 100) {
+        mouseMovementsRef.current = mouseMovementsRef.current.slice(-100)
+      }
+
+      // Track mouse movement patterns every 5 seconds
+      if (mouseMovementsRef.current.length % 50 === 0) {
+        trackActivity("MOUSE_MOVEMENT_PATTERN", {
+          movementCount: mouseMovementsRef.current.length,
+          averageSpeed: calculateMouseSpeed(),
+        })
+      }
+    }
+
+    // Click tracking with heatmap data
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const clickData = {
+        x: e.clientX,
+        y: e.clientY,
+        timestamp: Date.now(),
+        element: target.tagName.toLowerCase(),
+      }
+
+      clickHeatmapRef.current.push(clickData)
+
+      trackActivity("DETAILED_CLICK", {
+        coordinates: { x: e.clientX, y: e.clientY },
+        element: {
+          tagName: target.tagName,
+          id: target.id,
+          className: target.className,
+          text: target.textContent?.substring(0, 50),
+        },
+        pageX: e.pageX,
+        pageY: e.pageY,
+        button: e.button,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+      })
+    }
+
+    // Scroll tracking
+    const handleScroll = () => {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
+      const windowHeight = window.innerHeight
+      const documentHeight = document.documentElement.scrollHeight
+      const scrollDepth = Math.round(((scrollTop + windowHeight) / documentHeight) * 100)
+
+      if (scrollDepth > maxScrollDepthRef.current) {
+        maxScrollDepthRef.current = scrollDepth
+        trackScrollDepth(scrollDepth)
+      }
+
+      trackActivity("SCROLL", {
+        scrollTop,
+        scrollDepth,
+        direction: scrollTop > (handleScroll as any).lastScrollTop ? "down" : "up",
+      })
+      ;(handleScroll as any).lastScrollTop = scrollTop
+    }
+
+    // Keyboard tracking
+    const handleKeyDown = (e: KeyboardEvent) => {
+      trackActivity("KEYBOARD_INPUT", {
+        key: e.key,
+        code: e.code,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        metaKey: e.metaKey,
+      })
+    }
+
+    // Visibility change tracking
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        trackActivity("PAGE_HIDDEN", {
+          timeOnPage: Date.now() - pageStartTimeRef.current,
+        })
+      } else {
+        trackActivity("PAGE_VISIBLE", {
+          returnTime: Date.now(),
+        })
+        pageStartTimeRef.current = Date.now()
+      }
+    }
+
+    // Performance tracking
+    const trackPerformance = () => {
+      if ("performance" in window) {
+        const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming
+        if (navigation) {
+          trackEvent({
+            type: "PERFORMANCE_METRICS",
+            data: {
+              loadTime: navigation.loadEventEnd - navigation.loadEventStart,
+              domContentLoaded: navigation.domContentLoadedEventEnd - navigation.domContentLoadedEventStart,
+              firstPaint: performance.getEntriesByName("first-paint")[0]?.startTime || 0,
+              firstContentfulPaint: performance.getEntriesByName("first-contentful-paint")[0]?.startTime || 0,
+              timestamp: new Date().toISOString(),
+            },
+          })
+        }
       }
     }
 
     // Throttled version of trackActivity
     let lastActivityTime = 0
-    const throttledTrackActivity = () => {
+    const throttledTrackActivity = (eventType: string, data?: Record<string, any>) => {
       const now = Date.now()
-      if (now - lastActivityTime > 5000) {
-        // Only update every 5 seconds
+      if (now - lastActivityTime > 1000) {
+        // Throttle to once per second
         lastActivityTime = now
-        trackActivity()
+        trackActivity(eventType, data)
       }
     }
 
-    // Set up event listeners for user activity
-    window.addEventListener("mousemove", throttledTrackActivity)
-    window.addEventListener("keydown", throttledTrackActivity)
-    window.addEventListener("scroll", throttledTrackActivity)
-    window.addEventListener("click", throttledTrackActivity)
+    // Set up event listeners
+    window.addEventListener("mousemove", handleMouseMove)
+    window.addEventListener("click", handleClick)
+    window.addEventListener("scroll", handleScroll)
+    window.addEventListener("keydown", handleKeyDown)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     // Initialize activity timeout
     resetActivityTimeout()
 
+    // Track performance after page load
+    if (document.readyState === "complete") {
+      trackPerformance()
+    } else {
+      window.addEventListener("load", trackPerformance)
+    }
+
     // Track session end when user leaves the page
     const handleBeforeUnload = () => {
       if (sessionData) {
-        // We can't use async functions with beforeunload, so we use
-        // synchronous methods like navigator.sendBeacon() in a real implementation
         const sessionEndEvent = {
           type: "SESSION_END",
           data: {
@@ -175,6 +393,10 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
             pageViews: sessionData.pageViews,
             events: sessionData.events,
             reason: "page_exit",
+            timeOnCurrentPage: Date.now() - pageStartTimeRef.current,
+            maxScrollDepth: maxScrollDepthRef.current,
+            mouseMovements: mouseMovementsRef.current.length,
+            clickHeatmap: clickHeatmapRef.current,
             timestamp: new Date().toISOString(),
           },
         }
@@ -202,11 +424,13 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
 
     // Cleanup
     return () => {
-      window.removeEventListener("mousemove", throttledTrackActivity)
-      window.removeEventListener("keydown", throttledTrackActivity)
-      window.removeEventListener("scroll", throttledTrackActivity)
-      window.removeEventListener("click", throttledTrackActivity)
+      window.removeEventListener("mousemove", handleMouseMove)
+      window.removeEventListener("click", handleClick)
+      window.removeEventListener("scroll", handleScroll)
+      window.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       window.removeEventListener("beforeunload", handleBeforeUnload)
+      window.removeEventListener("load", trackPerformance)
 
       if (activityTimeoutRef.current) {
         clearTimeout(activityTimeoutRef.current)
@@ -217,6 +441,26 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
       clearInterval(intervalId)
     }
   }, [])
+
+  // Calculate mouse speed
+  const calculateMouseSpeed = () => {
+    if (mouseMovementsRef.current.length < 2) return 0
+
+    const movements = mouseMovementsRef.current.slice(-10) // Last 10 movements
+    let totalDistance = 0
+    let totalTime = 0
+
+    for (let i = 1; i < movements.length; i++) {
+      const prev = movements[i - 1]
+      const curr = movements[i]
+      const distance = Math.sqrt(Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2))
+      const time = curr.timestamp - prev.timestamp
+      totalDistance += distance
+      totalTime += time
+    }
+
+    return totalTime > 0 ? totalDistance / totalTime : 0
+  }
 
   // Save events to localStorage periodically
   useEffect(() => {
@@ -283,12 +527,14 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const trackPageView = () => {
+  const trackPageView = (additionalData?: Record<string, any>) => {
     const newEvent: TrackingEvent = {
       type: "PAGE_VIEW",
       data: {
         url: window.location.href,
         path: window.location.pathname,
+        search: window.location.search,
+        hash: window.location.hash,
         referrer: document.referrer,
         timestamp: new Date().toISOString(),
         sessionId: sessionData?.sessionId,
@@ -296,7 +542,18 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
           width: window.innerWidth,
           height: window.innerHeight,
         },
+        screen: {
+          width: screen.width,
+          height: screen.height,
+          colorDepth: screen.colorDepth,
+        },
         userAgent: navigator.userAgent,
+        language: navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        cookieEnabled: navigator.cookieEnabled,
+        onlineStatus: navigator.onLine,
+        connectionType: getConnectionType(),
+        ...additionalData,
       },
     }
 
@@ -305,22 +562,80 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     processEventQueue()
   }
 
+  const trackScrollDepth = (depth: number) => {
+    const milestones = [25, 50, 75, 90, 100]
+    const milestone = milestones.find((m) => depth >= m && depth < m + 5)
+
+    if (milestone) {
+      trackEvent({
+        type: "SCROLL_DEPTH",
+        data: {
+          depth,
+          milestone,
+          timestamp: new Date().toISOString(),
+          url: window.location.href,
+        },
+      })
+    }
+  }
+
+  const trackTimeOnPage = (duration: number) => {
+    trackEvent({
+      type: "TIME_ON_PAGE",
+      data: {
+        duration,
+        url: window.location.href,
+        timestamp: new Date().toISOString(),
+      },
+    })
+  }
+
+  const trackUserInteraction = (interaction: string, element: string, data?: Record<string, any>) => {
+    trackEvent({
+      type: "USER_INTERACTION",
+      data: {
+        interaction,
+        element,
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        ...data,
+      },
+    })
+  }
+
   const trackEvent = (event: TrackingEvent) => {
-    // Thêm kiểm tra để tránh theo dõi các sự kiện trùng lặp trong thời gian ngắn
+    // Enhanced event deduplication
     const eventKey = `${event.type}-${JSON.stringify(event.data)}`
     const now = Date.now()
 
-    // Kiểm tra xem sự kiện tương tự đã được ghi lại gần đây chưa
-    if (recentEventsRef.current[eventKey] && now - recentEventsRef.current[eventKey] < 2000) {
-      // Bỏ qua sự kiện nếu đã ghi lại trong vòng 2 giây
+    // Different deduplication timeouts for different event types
+    const deduplicationTimeout = event.type.includes("MOUSE") || event.type.includes("SCROLL") ? 500 : 2000
+
+    if (recentEventsRef.current[eventKey] && now - recentEventsRef.current[eventKey] < deduplicationTimeout) {
       return
     }
 
-    // Ghi lại thời gian của sự kiện này
+    // Record the time of this event
     recentEventsRef.current[eventKey] = now
 
+    // Enhanced event data
+    const enhancedEvent = {
+      ...event,
+      data: {
+        ...event.data,
+        sessionId: sessionData?.sessionId,
+        timestamp: event.data.timestamp || new Date().toISOString(),
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
+        deviceType: sessionData?.deviceType,
+        browser: sessionData?.browser,
+        os: sessionData?.os,
+      },
+    }
+
     // Add to queue instead of directly updating state
-    eventsQueueRef.current.push(event)
+    eventsQueueRef.current.push(enhancedEvent)
 
     // Process queue if not already processing
     if (!isProcessingQueueRef.current) {
@@ -328,7 +643,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Send data to server
+  // Send data to server with enhanced payload
   const sendToServer = async (event: TrackingEvent) => {
     try {
       const payload = {
@@ -337,20 +652,44 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         clientInfo: {
           userAgent: navigator.userAgent,
           language: navigator.language,
+          languages: navigator.languages,
+          platform: navigator.platform,
+          cookieEnabled: navigator.cookieEnabled,
+          onLine: navigator.onLine,
           screenSize: {
             width: window.screen.width,
             height: window.screen.height,
+            colorDepth: window.screen.colorDepth,
+            pixelDepth: window.screen.pixelDepth,
           },
           viewportSize: {
             width: window.innerWidth,
             height: window.innerHeight,
           },
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          connectionType: getConnectionType(),
           timestamp: new Date().toISOString(),
         },
         sessionInfo: sessionData,
+        performanceInfo: {
+          memory: (performance as any).memory
+            ? {
+                usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
+                totalJSHeapSize: (performance as any).memory.totalJSHeapSize,
+                jsHeapSizeLimit: (performance as any).memory.jsHeapSizeLimit,
+              }
+            : null,
+          timing: performance.timing
+            ? {
+                navigationStart: performance.timing.navigationStart,
+                loadEventEnd: performance.timing.loadEventEnd,
+                domContentLoadedEventEnd: performance.timing.domContentLoadedEventEnd,
+              }
+            : null,
+        },
       }
 
-      console.log("Sending tracking data:", payload)
+      console.log("Sending enhanced tracking data:", payload)
 
       const response = await fetch("/api/track", {
         method: "POST",
@@ -368,7 +707,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
       }
 
       const result = await response.json()
-      console.log("Tracking data sent successfully:", result)
+      console.log("Enhanced tracking data sent successfully:", result)
     } catch (error) {
       // Handle error but don't disrupt user experience
       console.error("Failed to send tracking data to server:", error)
@@ -394,7 +733,18 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <TrackingContext.Provider value={{ events, trackEvent, clearEvents, sessionData }}>
+    <TrackingContext.Provider
+      value={{
+        events,
+        trackEvent,
+        clearEvents,
+        sessionData,
+        trackPageView,
+        trackScrollDepth,
+        trackTimeOnPage,
+        trackUserInteraction,
+      }}
+    >
       {children}
     </TrackingContext.Provider>
   )
