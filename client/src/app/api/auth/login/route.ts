@@ -5,7 +5,6 @@ import { generateToken } from "@/lib/auth/middleware"
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()
-
     // Validate input
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 })

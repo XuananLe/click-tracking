@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, useRef, type ReactNode 
 
 type TrackingEvent = {
   type: string
-  data: Record<string, any>
+  data: Record<any, any>
 }
 
 type SessionData = {
@@ -422,6 +422,64 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
       processEventQueue()
     }, 1000)
 
+    // Retry failed events periodically
+    const retryFailedEvents = async () => {
+      try {
+        const failedEventsJson = localStorage.getItem("failed_tracking_events")
+        if (!failedEventsJson) return
+
+        const failedEvents = JSON.parse(failedEventsJson)
+        if (failedEvents.length === 0) return
+
+        console.log(`Retrying ${failedEvents.length} failed tracking events`)
+
+        const retryPromises = failedEvents
+          .filter((item: any) => item.retryCount < 3) // Only retry up to 3 times
+          .map(async (item: any) => {
+            try {
+              const result = await sendToServer(item.event)
+              if (result) {
+                // Success - remove from failed events
+                return { success: true, item }
+              }
+            } catch (error) {
+              // Still failing - increment retry count
+              item.retryCount = (item.retryCount || 0) + 1
+              return { success: false, item }
+            }
+            return { success: false, item }
+          })
+
+        const results = await Promise.allSettled(retryPromises)
+
+        // Update failed events list
+        const stillFailedEvents = results
+          .filter((result, index) => {
+            if (result.status === "fulfilled") {
+              return !result.value.success && result.value.item.retryCount < 3
+            }
+            return true
+          })
+          .map((result, index) => {
+            if (result.status === "fulfilled" && !result.value.success) {
+              return result.value.item
+            }
+            return failedEvents[index]
+          })
+
+        localStorage.setItem("failed_tracking_events", JSON.stringify(stillFailedEvents))
+
+        if (stillFailedEvents.length < failedEvents.length) {
+          console.log(`Successfully retried ${failedEvents.length - stillFailedEvents.length} events`)
+        }
+      } catch (error) {
+        console.error("Error retrying failed events:", error)
+      }
+    }
+
+    // Set up retry interval (every 30 seconds)
+    const retryInterval = setInterval(retryFailedEvents, 30000)
+
     // Cleanup
     return () => {
       window.removeEventListener("mousemove", handleMouseMove)
@@ -439,6 +497,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         clearTimeout(sessionTimeoutRef.current)
       }
       clearInterval(intervalId)
+      clearInterval(retryInterval)
     }
   }, [])
 
@@ -522,7 +581,7 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
 
       // If there are more events, process them in the next tick
       if (eventsQueueRef.current.length > 0) {
-        setTimeout(processEventQueue, 100)
+        setTimeout(processEventQueue, 1000)
       }
     }
   }
@@ -672,21 +731,56 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         },
         sessionInfo: sessionData,
         performanceInfo: {
-          memory: (performance as any).memory
-            ? {
-                usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
-                totalJSHeapSize: (performance as any).memory.totalJSHeapSize,
-                jsHeapSizeLimit: (performance as any).memory.jsHeapSizeLimit,
+          memory: (() => {
+            // Check if performance.memory is available and accessible
+            try {
+              const perfMemory = (performance as any).memory
+              if (perfMemory && typeof perfMemory.usedJSHeapSize === "number") {
+                return {
+                  usedJSHeapSize: perfMemory.usedJSHeapSize,
+                  totalJSHeapSize: perfMemory.totalJSHeapSize,
+                  jsHeapSizeLimit: perfMemory.jsHeapSizeLimit,
+                }
               }
-            : null,
-          timing: performance.timing
-            ? {
-                navigationStart: performance.timing.navigationStart,
-                loadEventEnd: performance.timing.loadEventEnd,
-                domContentLoadedEventEnd: performance.timing.domContentLoadedEventEnd,
+            } catch (error) {
+              console.debug("Performance memory API not available:", error)
+            }
+            return null
+          })(),
+          timing: (() => {
+            try {
+              if (performance.timing) {
+                return {
+                  navigationStart: performance.timing.navigationStart,
+                  loadEventEnd: performance.timing.loadEventEnd,
+                  domContentLoadedEventEnd: performance.timing.domContentLoadedEventEnd,
+                }
               }
-            : null,
+            } catch (error) {
+              console.debug("Performance timing API not available:", error)
+            }
+            return null
+          })(),
+          // Add alternative memory estimation
+          estimatedMemoryUsage: (() => {
+            try {
+              // Estimate memory usage based on DOM complexity and stored data
+              const domNodes = document.querySelectorAll("*").length
+              const localStorageSize = JSON.stringify(localStorage).length
+              const sessionStorageSize = JSON.stringify(sessionStorage).length
+
+              return {
+                domComplexity: domNodes,
+                localStorageBytes: localStorageSize,
+                sessionStorageBytes: sessionStorageSize,
+                estimatedTotalKB: Math.round((domNodes * 100 + localStorageSize + sessionStorageSize) / 1024),
+              }
+            } catch (error) {
+              return null
+            }
+          })(),
         },
+        userData : JSON.parse(localStorage.getItem("user_data")) || null,
       }
 
       console.log("Sending enhanced tracking data:", payload)
@@ -699,31 +793,51 @@ export function TrackingProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(payload),
       })
 
+      // Check if response is ok first
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(
-          `Server responded with status: ${response.status}. ${errorData.error || errorData.message || ""}`,
-        )
+        // Try to get error details, but handle non-JSON responses
+        let errorDetails = `Server responded with status: ${response.status}`
+
+        try {
+          const errorData = await response.json()
+          errorDetails += `. ${errorData.error || errorData.message || ""}`
+        } catch (parseError) {
+          // If we can't parse JSON, get text instead
+          try {
+            const errorText = await response.text()
+            errorDetails += `. Response: ${errorText.substring(0, 200)}`
+          } catch (textError) {
+            errorDetails += ". Unable to read response body."
+          }
+        }
+
+        throw new Error(errorDetails)
       }
 
+      // Parse successful response
       const result = await response.json()
       console.log("Enhanced tracking data sent successfully:", result)
+
+      return result
     } catch (error) {
-      // Handle error but don't disrupt user experience
       console.error("Failed to send tracking data to server:", error)
 
-      // Store failed events in localStorage for retry later
       try {
         const failedEvents = JSON.parse(localStorage.getItem("failed_tracking_events") || "[]")
         failedEvents.push({
           event,
           timestamp: new Date().toISOString(),
           error: error instanceof Error ? error.message : "Unknown error",
+          retryCount: 0,
         })
-        localStorage.setItem("failed_tracking_events", JSON.stringify(failedEvents.slice(-50))) // Keep last 50 failed events
+
+        const recentFailedEvents = failedEvents.slice(-50)
+        localStorage.setItem("failed_tracking_events", JSON.stringify(recentFailedEvents))
       } catch (storageError) {
         console.error("Failed to store failed tracking event:", storageError)
       }
+
+      return null
     }
   }
 

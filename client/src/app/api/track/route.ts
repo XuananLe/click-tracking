@@ -1,26 +1,22 @@
 import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
 
-const sql = neon(process.env.DATABASE_URL!)
 
+const BACKEND_URL = process.env.BACKEND_URL
 export async function POST(request: Request) {
   try {
-    // Get tracking data from request
     const data = await request.json()
 
     console.log("Received tracking data:", JSON.stringify(data, null, 2))
 
-    // Extract the necessary fields with fallbacks
-    const sessionId = data.sessionInfo?.sessionId || data.data?.sessionId || "anonymous"
-    const eventType = data.type || "UNKNOWN"
-    const eventData = data.data || {}
-    const clientInfo = data.clientInfo || null
+    const res = await fetch(`${BACKEND_URL}/event-track`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data)
+    })
 
-    // Insert into database using tagged template
-    await sql`
-      INSERT INTO tracking_events (session_id, event_type, event_data, client_info)
-      VALUES (${sessionId}, ${eventType}, ${JSON.stringify(eventData)}, ${clientInfo ? JSON.stringify(clientInfo) : null})
-    `
+    console.log("Response from backend:", res.status, await res.text())
 
     return NextResponse.json({
       success: true,
