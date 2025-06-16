@@ -1,0 +1,115 @@
+version: "3"
+
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - 9870:9870  # HDFS Web UI
+      - 9999:9000  # HDFS Service
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=test
+    env_file:
+      - ./hadoop/hadoop.env
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./hadoop/hadoop.env
+  
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
+    restart: always
+    ports:
+      - 8088:8088  # YARN ResourceManager Web UI
+    environment:
+      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 datanode:9864"
+    env_file:
+      - ./hadoop/hadoop.env
+
+  nodemanager1:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: nodemanager
+    restart: always
+    environment:
+      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 datanode:9864 resourcemanager:8088"
+    env_file:
+      - ./hadoop/hadoop.env
+  
+  historyserver:
+    image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8
+    container_name: historyserver
+    restart: always
+    ports:
+      - 8188:8188  # YARN HistoryServer Web UI      
+    environment:
+      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 datanode:9864 resourcemanager:8088"
+    volumes:
+      - hadoop_historyserver:/hadoop/yarn/timeline
+    env_file:
+      - ./hadoop/hadoop.env
+
+  spark-master:
+    image: bitnami/spark
+    container_name: spark-master
+    restart: always
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=spark
+      - SPARK_MASTER_URL=spark://spark-master:7077  # URL for Spark Master
+      - SPARK_YARN_ENABLED=true  # Enable YARN
+      - SPARK_HADOOP_CONFIG_DIR=/opt/hadoop/etc/hadoop  # Link to Hadoop's config
+    ports:
+      - '7077:7077'  # Spark Master Service
+      - '8080:8080'  # Spark Master Web UI
+    command: bash -c "spark-shell --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3 && /opt/bitnami/spark/sbin/start-master.sh"
+
+
+  spark-connect:
+    image: bitnami/spark
+    container_name: spark-connect
+    environment:
+      - SPARK_MODE=driver
+      - SPARK_MASTER=spark://spark-master:7077
+    ports:
+      - 15002:15002
+    restart: always
+    depends_on:
+      - spark-master
+    command: ["/bin/bash", "-c", "/opt/bitnami/spark/sbin/start-connect-server.sh --master spark://spark-master:7077 --packages org.apache.spark:spark-connect_2.12:3.5.4"]
+
+  spark-worker:
+    image: bitnami/spark
+    container_name: spark-worker
+    restart: always
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=10G
+      - SPARK_WORKER_CORES=8
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=spark
+      - SPARK_YARN_ENABLED=true  # Enable YARN
+      - SPARK_HADOOP_CONFIG_DIR=/opt/hadoop/etc/hadoop  # Link to Hadoop's config
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  hadoop_historyserver:

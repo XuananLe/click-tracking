@@ -2,13 +2,10 @@ import json
 from random import randint
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 import os
-from random import choice
 from fastapi.middleware.cors import CORSMiddleware
 import dotenv
-from confluent_kafka import Producer, KafkaError
-import logging
-from pydantic import BaseModel
-from typing import Optional, List, Dict
+from confluent_kafka import Producer
+from typing import Dict
 
 dotenv.load_dotenv()
 
