@@ -43,6 +43,42 @@ product_type_provider = DynamicProvider(
 )
 
 
+payment_type_provider = DynamicProvider(
+        provider_name="random_payment_type",
+        elements=[
+            "Credit Card", "Debit Card", "PayPal", "Bank Transfer", "Cash on Delivery", "Cryptocurrency", "Gift Card", "Mobile Payment", "Buy Now Pay Later", "Direct Debit"
+        ]
+)
+
+
+shipment_type_provider = DynamicProvider(
+        provider_name="random_shipment_type",
+        elements=[
+            "Standard Shipping", "Express Shipping", "Overnight Shipping", "Two-Day Shipping", "Same-Day Delivery", "International Shipping", "In-Store Pickup", "Curbside Pickup", "Locker Pickup", "Drone Delivery"
+        ]
+)
+
+login_type_provider = DynamicProvider(
+        provider_name="random_login_type",
+        elements=[
+            "Email and Password", "Social Media Login", "Single Sign-On (SSO)", "Two-Factor Authentication (2FA)", "Biometric Login", "Magic Link", "OAuth", "OpenID Connect", "Passwordless Login", "Device-Based Authentication"
+        ]
+)
+
+currency_type_provider = DynamicProvider(
+        provider_name="random_currency_type",
+        elements=[
+                "USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "CNY", "INR", "RUB"
+        ]
+)
+
+
+exit_reasons_type_provider = DynamicProvider(
+        provider_name="random_exit_reasons_type",
+        elements=[
+            "Page Not Found", "Session Timeout", "User Decision", "Technical Error", "Navigation Error", "Content Not Relevant", "Payment Failure", "Security Concern", "Privacy Policy", "Other"
+        ]
+)
 
 
 
@@ -52,5 +88,18 @@ def register_providers(fake):
     fake.add_provider(viewport_type_provider)
     fake.add_provider(browser_type_provider)
     fake.add_provider(connection_type_provider)
+    fake.add_provider(product_type_provider)
+    fake.add_provider(payment_type_provider)
+    fake.add_provider(shipment_type_provider)
+    fake.add_provider(login_type_provider)
+    fake.add_provider(currency_type_provider)
+    fake.add_provider(exit_reasons_type_provider)
     
     return fake
+
+from faker import Faker
+fake = Faker()
+fake = register_providers(fake)
+print(fake.random_shipment_type())
+print(fake.random_currency_type())
+print(fake.random_exit_reasons_type())

@@ -1,18 +1,13 @@
-import json
 import os
 import clickhouse_connect
 import dotenv
-import faker
 import warnings
 import utils
-import datetime
-import random
-from datetime import timedelta
+from pyspark.sql import SparkSession
+
 
 warnings.filterwarnings("ignore")
-from model import Event
 from faker import Faker
-from datetime import datetime
 
 
 # Load environment variables
@@ -46,216 +41,271 @@ clickhouse = clickhouse_connect.get_client(
 
 clickhouse.command("CREATE DATABASE IF NOT EXISTS click_tracking")
 
-clickhouse.command("""
-CREATE TABLE IF NOT EXISTS click_tracking.page_duration (
-    page_type String,
-    product_id Int32,
-    product_name String,
-    duration_seconds Int32,
-    timestamp DateTime,
-    session_id String,
-    url String,
-    user_agent String,
-    viewport String,
-    device_type String,
-    browser String,
-    os String
-) ENGINE = MergeTree()
-ORDER BY (session_id, timestamp);
-""")
 
 
 clickhouse.command("""
-CREATE TABLE IF NOT EXISTS click_tracking.session_info (
-    session_id String,
-    start_time DateTime,
-    last_activity_time DateTime,
-    page_views Int32,
-    events Int32,
-    referrer String,
-    entry_page String,
-    user_agent String,
-    language String,
-    timezone String,
-    screen_resolution String,
-    viewport_size String,
+CREATE TABLE IF NOT EXISTS click_tracking.click_tracking_events
+(
+    event_type String,
+    timestamp DateTime64(3),
+    session_id UUID,
+    user_id Nullable(UUID),
     device_type String,
     browser String,
     os String,
+    user_agent String,
+    ip_address String,
+    geo_location_country String,
+    geo_location_city String,
+    client_timezone String,
     connection_type String,
-    is_returning_user Boolean
-) ENGINE = MergeTree()
-ORDER BY (session_id, start_time);
+    url Nullable(String),
+    path Nullable(String),
+    referrer Nullable(String),
+    page_type Nullable(String),
+    query Nullable(String),
+    results_count Nullable(UInt32),
+    filters_applied Array(Nullable(String)),
+    product_id Nullable(UInt32),
+    product_name Nullable(String),
+    category Nullable(String),
+    sub_type Nullable(String),
+    price Nullable(UInt32),
+    currency Nullable(String),
+    sku Nullable(String),
+    brand Nullable(String),
+    quantity Nullable(UInt32),
+    variant Nullable(String),
+    cart_value Nullable(Float64),
+    cart_items Nullable(String),
+    checkout_step Nullable(String),
+    step_number Nullable(UInt8),
+    payment_method Nullable(String),
+    amount Nullable(Float64),
+    order_id Nullable(UInt32),
+    order_value Nullable(Float64),
+    shipping_method Nullable(String),
+    shipping_cost Nullable(Float64),
+    tax_amount Nullable(Float64),
+    login_method Nullable(String),
+    login_success Nullable(UInt8),
+    review_rating Nullable(UInt8),
+    review_text Nullable(String),
+    share_platform Nullable(String),
+    share_url Nullable(String),
+    error_type Nullable(String),
+    error_message Nullable(String),
+    error_component Nullable(String),
+    filter_type Nullable(String),
+    filter_value Nullable(String),
+    filter_action Nullable(String),
+    promotion_id Nullable(UInt32),
+    promotion_name Nullable(String),
+    creative_id Nullable(String),
+    placement Nullable(String),
+    target_url Nullable(String),
+    element_id Nullable(String),
+    element_class Nullable(String),
+    element_type Nullable(String),
+    text_content Nullable(String),
+    position_x Nullable(UInt32),
+    position_y Nullable(UInt32),
+    session_duration_seconds Nullable(UInt32),
+    time_on_page Nullable(UInt32),
+    exit_reason Nullable(String)
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (timestamp, session_id, event_type)
+SETTINGS index_granularity = 8192;
 """)
-
-clickhouse.command("""
-CREATE TABLE IF NOT EXISTS click_tracking.performance_info (
-    session_id String,
-    memory_usage Float64,
-    navigation_start DateTime,
-    load_event_end DateTime,
-    dom_content_loaded_event_end DateTime,
-    dom_complexity Int32,
-    local_storage_bytes Int32,
-    session_storage_bytes Int32,
-    estimated_total_kb Int32
-) ENGINE = MergeTree()
-ORDER BY (session_id, navigation_start);
-""")
-
-clickhouse.query("""
-CREATE TABLE IF NOT EXISTS click_tracking.user_data (
-    user_id Int32,
-    email String,
-    name String,
-    phone String,
-    address String,
-    created_at DateTime,
-    updated_at DateTime
-) ENGINE = MergeTree()
-ORDER BY (user_id);
-""")
-
-from pyspark.sql import SparkSession
 
 spark = SparkSession.builder \
     .appName("Click-Tracking-Consuming") \
-    .config("spark.driver.memory", "8g") \
+    .config("spark.driver.memory", "10g") \
     .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0") \
     .getOrCreate()
 
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, BooleanType, ArrayType
 
+schema = StructType([
+    StructField("event_type", StringType(), False),
+    StructField("timestamp", StringType(), False),
+    StructField("session_id", StringType(), False),
+    StructField("user_id", StringType(), True),
+    StructField("device_type", StringType(), True),
+    StructField("browser", StringType(), True),
+    StructField("os", StringType(), True),
+    StructField("user_agent", StringType(), True),
+    StructField("ip_address", StringType(), True),
+    StructField("geo_location", StructType([
+        StructField("country", StringType(), True),
+        StructField("city", StringType(), True)
+    ]), True),
+    StructField("client_timezone", StringType(), True),
+    StructField("connection_type", StringType(), True),
+    StructField("url", StringType(), True),
+    StructField("path", StringType(), True),
+    StructField("referrer", StringType(), True),
+    StructField("page_type", StringType(), True),
+    StructField("query", StringType(), True),
+    StructField("results_count", IntegerType(), True),
+    StructField("filters_applied", ArrayType(StringType()), True),
+    StructField("product_id", IntegerType(), True),
+    StructField("product_name", StringType(), True),
+    StructField("category", StringType(), True),
+    StructField("sub_type", StringType(), True),
+    StructField("price", IntegerType(), True),
+    StructField("currency", StringType(), True),
+    StructField("sku", StringType(), True),
+    StructField("brand", StringType(), True),
+    StructField("quantity", IntegerType(), True),
+    StructField("variant", StringType(), True),
+    StructField("cart_value", FloatType(), True),
+    StructField("cart_items", ArrayType(StructType([
+        StructField("product_id", IntegerType(), True),
+        StructField("product_name", StringType(), True),
+        StructField("quantity", IntegerType(), True),
+        StructField("price", IntegerType(), True)
+    ])), True),
+    StructField("checkout_step", StringType(), True),
+    StructField("step_number", IntegerType(), True),
+    StructField("payment_method", StringType(), True),
+    StructField("amount", FloatType(), True),
+    StructField("order_id", IntegerType(), True),
+    StructField("order_value", FloatType(), True),
+    StructField("shipping_method", StringType(), True),
+    StructField("shipping_cost", FloatType(), True),
+    StructField("tax_amount", FloatType(), True),
+    StructField("login_method", StringType(), True),
+    StructField("success", BooleanType(), True),
+    StructField("rating", IntegerType(), True),
+    StructField("review_text", StringType(), True),
+    StructField("platform", StringType(), True),
+    StructField("share_url", StringType(), True),
+    StructField("error_type", StringType(), True),
+    StructField("error_message", StringType(), True),
+    StructField("component", StringType(), True),
+    StructField("filter_type", StringType(), True),
+    StructField("filter_value", StringType(), True),
+    StructField("action", StringType(), True),
+    StructField("promotion_id", IntegerType(), True),
+    StructField("promotion_name", StringType(), True),
+    StructField("creative_id", StringType(), True),
+    StructField("placement", StringType(), True),
+    StructField("target_url", StringType(), True),
+    StructField("element_id", StringType(), True),
+    StructField("element_class", StringType(), True),
+    StructField("element_type", StringType(), True),
+    StructField("text_content", StringType(), True),
+    StructField("position", StructType([
+        StructField("x", IntegerType(), True),
+        StructField("y", IntegerType(), True)
+    ]), True),
+    StructField("session_duration_seconds", IntegerType(), True),
+    StructField("time_on_page", IntegerType(), True),
+    StructField("exit_reason", StringType(), True)
+])
+
+
+from pyspark.sql.functions import from_json, col, when, array, lit
+import pyspark.sql.functions as F
 
 def write_to_clickhouse(batch_df, batch_id):
-    rows = batch_df.select("key", "value").rdd.map(lambda row: (row['key'], row['value'])).collect()
-    print(f"Processing batch with {len(rows)} rows")
+    print(f"Processing batch {batch_id} with {batch_df.count()} rows")
 
-    for row in rows:
-        event = json.loads(row[1])
-        try:
-            event = Event(**event)
-            viewport = event.data.viewport
-            
-            if isinstance(viewport, dict):
-                viewport = json.dumps(viewport)
+    parsed_df = batch_df.select(
+        from_json(col("value").cast("string"), schema).alias("event")
+    )
+
+    flattened_df = parsed_df.select(
+        col("event.event_type").alias("event_type"),
+        col("event.timestamp").alias("timestamp"),
+        col("event.session_id").cast("string").alias("session_id"),
+        col("event.user_id").cast("string").alias("user_id"),
+        col("event.device_type").alias("device_type"),
+        col("event.browser").alias("browser"),
+        col("event.os").alias("os"),
+        col("event.user_agent").alias("user_agent"),
+        col("event.ip_address").alias("ip_address"),
+        col("event.geo_location.country").alias("geo_location_country"),
+        col("event.geo_location.city").alias("geo_location_city"),
+        col("event.client_timezone").alias("client_timezone"),
+        col("event.connection_type").alias("connection_type"),
+        col("event.url").alias("url"),
+        col("event.path").alias("path"),
+        col("event.referrer").alias("referrer"),
+        col("event.page_type").alias("page_type"),
+        col("event.query").alias("query"),
+        col("event.results_count").alias("results_count"),
+        when(
+            col("event.filters_applied").isNull() | (F.size(col("event.filters_applied")) == 0),
+            array(lit(None))
+        ).otherwise(col("event.filters_applied")).alias("filters_applied"),        
+        col("event.product_id").alias("product_id"),
+        col("event.product_name").alias("product_name"),
+        col("event.category").alias("category"),
+        col("event.sub_type").alias("sub_type"),
+        col("event.price").alias("price"),
+        col("event.currency").alias("currency"),
+        col("event.sku").alias("sku"),
+        col("event.brand").alias("brand"),
+        col("event.quantity").alias("quantity"),
+        col("event.variant").alias("variant"),
+        col("event.cart_value").alias("cart_value"),
+        col("event.cart_items").cast("string").alias("cart_items"),
+        col("event.checkout_step").alias("checkout_step"),
+        col("event.step_number").alias("step_number"),
+        col("event.payment_method").alias("payment_method"),
+        col("event.amount").alias("amount"),
+        col("event.order_id").alias("order_id"),
+        col("event.order_value").alias("order_value"),
+        col("event.shipping_method").alias("shipping_method"),
+        col("event.shipping_cost").alias("shipping_cost"),
+        col("event.tax_amount").alias("tax_amount"),
+        col("event.login_method").alias("login_method"),
+        when(col("event.success") == True, 1).otherwise(0).alias("login_success"),
+        col("event.rating").alias("review_rating"),
+        col("event.review_text").alias("review_text"),
+        col("event.platform").alias("share_platform"),
+        col("event.share_url").alias("share_url"),
+        col("event.error_type").alias("error_type"),
+        col("event.error_message").alias("error_message"),
+        col("event.component").alias("error_component"),
+        col("event.filter_type").alias("filter_type"),
+        col("event.filter_value").alias("filter_value"),
+        col("event.action").alias("filter_action"),
+        col("event.promotion_id").alias("promotion_id"),
+        col("event.promotion_name").alias("promotion_name"),
+        col("event.creative_id").alias("creative_id"),
+        col("event.placement").alias("placement"),
+        col("event.target_url").alias("target_url"),
+        col("event.element_id").alias("element_id"),
+        col("event.element_class").alias("element_class"),
+        col("event.element_type").alias("element_type"),
+        col("event.text_content").alias("text_content"),
+        col("event.position.x").alias("position_x"),
+        col("event.position.y").alias("position_y"),
+        col("event.session_duration_seconds").alias("session_duration_seconds"),
+        col("event.time_on_page").alias("time_on_page"),
+        col("event.exit_reason").alias("exit_reason")
+    )
+
+    try:
+        if not flattened_df.isEmpty():
+            batch = flattened_df.collect()
+            if batch:
+                batch_data = [[row[field] for field in flattened_df.columns] for row in batch]
+                print(batch_data[len(batch_data) - 1])
+                clickhouse.insert('click_tracking.click_tracking_events', batch_data, column_names=flattened_df.columns)
+                print(f"Inserted {len(batch_data)} events into ClickHouse (batch {batch_id}).")
             else:
-                viewport = str(viewport) if viewport is not None else ""
+                print(f"No data to insert for batch {batch_id}.")
+        else:
+            print(f"Batch {batch_id} is empty.")
+    except Exception as e:
+        print(f"Error inserting batch {batch_id} into ClickHouse: {e}")
 
-            clickhouse.insert(
-                "click_tracking.session_info",
-                [[
-                    event.data.sessionId or "anonymous",
-                    datetime.now(),
-                    datetime.now() + timedelta(seconds=random.randint(0, 3600)),
-                    random.randint(1, 100),
-                    faker.Faker().random_int(min=0, max=100),
-                    fake.domain_name(),
-                    fake.domain_name(),
-                    fake.ascii_company_email(),
-                    event.clientInfo.language or "en-US",
-                    event.clientInfo.timezone or "UTC",
-                    str(random.randint(1000, 2000)) + "x" + str(random.randint(1000, 2000)),
-                    viewport,
-                    event.data.deviceType or "Desktop",
-                    event.data.browser or "Chrome",
-                    event.clientInfo.platform or faker.Faker().platform() or "Linux",
-                    event.clientInfo.connectionType or "WiFi",
-                ]],
-                column_names=[
-                    "session_id", 
-                    "start_time", 
-                    "last_activity_time", 
-                    "page_views", 
-                    "events", 
-                    "referrer", 
-                    "entry_page", 
-                    "user_agent", 
-                    "language", 
-                    "timezone", 
-                    "screen_resolution", 
-                    "viewport_size", 
-                    "device_type", 
-                    "browser", 
-                    "os", 
-                    "connection_type", 
-                ]
-            )
-            
-            if event.performanceInfo:
-                performance_info = event.performanceInfo
-                clickhouse.insert(
-                    "click_tracking.performance_info",
-                    [[
-                        event.data.sessionId or "anonymous",
-                        0.0 if not performance_info.memory else performance_info.memory.usedJSHeapSize or 0.0,
-                        datetime.fromtimestamp(performance_info.timing.navigationStart / 1000) if performance_info.timing.navigationStart else datetime.now(),
-                        datetime.fromtimestamp(performance_info.timing.loadEventEnd / 1000) if performance_info.timing.loadEventEnd else datetime.now(),
-                        datetime.fromtimestamp(performance_info.timing.domContentLoadedEventEnd / 1000) if performance_info.timing.domContentLoadedEventEnd else datetime.now(),
-                        performance_info.estimatedMemoryUsage.domComplexity or 0,
-                        performance_info.estimatedMemoryUsage.localStorageBytes or 0,
-                        performance_info.estimatedMemoryUsage.sessionStorageBytes or 0,
-                        performance_info.estimatedMemoryUsage.estimatedTotalKB or 0
-                    ]],
-                    column_names=[
-                        "session_id", 
-                        "memory_usage", 
-                        "navigation_start", 
-                        "load_event_end", 
-                        "dom_content_loaded_event_end", 
-                        "dom_complexity", 
-                        "local_storage_bytes", 
-                        "session_storage_bytes", 
-                        "estimated_total_kb"
-                    ]
-                )
-
-
-            clickhouse.insert(
-                "click_tracking.session_info",
-                [[
-                    fake.random_letter(),
-                    datetime.now(),
-                    datetime.now() + timedelta(seconds=random.randint(0, 3600)),
-                    random.randint(1, 100),
-                    faker.Faker().random_int(min=0, max=100),
-                    fake.domain_name(),
-                    fake.domain_name(),
-                    fake.ascii_company_email(),
-                    event.clientInfo.language or "en-US",
-                    event.clientInfo.timezone or "UTC",
-                    fake.random_viewport_type(),
-                    viewport,
-                    fake.random_device_type(),
-                    fake.random_browser_type(),
-                    event.clientInfo.platform or faker.Faker().platform() or "Linux",
-                    event.clientInfo.connectionType or "WiFi",
-                    True
-                ]],
-                column_names=[
-                    "session_id", 
-                    "start_time", 
-                    "last_activity_time", 
-                    "page_views", 
-                    "events", 
-                    "referrer", 
-                    "entry_page", 
-                    "user_agent", 
-                    "language", 
-                    "timezone", 
-                    "screen_resolution", 
-                    "viewport_size", 
-                    "device_type", 
-                    "browser", 
-                    "os", 
-                    "connection_type",
-                    "is_returning_user"
-                ]
-            )    
-        except Exception as e:
-            pretty_print = json.dumps(event.model_dump(), indent=2, ensure_ascii=False)
-            print(pretty_print)
-            raise(f"Error parsing data: {e}")
-        
 
 kafka_df = spark.readStream \
     .format("kafka") \
@@ -265,11 +315,14 @@ kafka_df = spark.readStream \
     .option("startingOffsets", "earliest") \
     .option("kafka.sasl.mechanism", "PLAIN") \
     .option(
-    "kafka.sasl.jaas.config",
-    f"""org.apache.kafka.common.security.plain.PlainLoginModule required username="{CONFLUENT_API_KEY}" password="{CONFLUENT_API_SECRET}";"""
-    ).load()
+        "kafka.sasl.jaas.config",
+        f"""org.apache.kafka.common.security.plain.PlainLoginModule required username="{CONFLUENT_API_KEY}" password="{CONFLUENT_API_SECRET}";"""
+    ) \
+    .option("rowsPerBatch", "10000") \
+    .option("maxOffsetsPerTrigger", "100000") \
+    .load()
 
-kafka_df = kafka_df.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
+kafka_df = kafka_df.selectExpr("CAST(value AS STRING)")
 
 query = kafka_df \
     .writeStream \
@@ -277,4 +330,11 @@ query = kafka_df \
     .outputMode("append") \
     .start()
 
-query.awaitTermination()
+try:
+    query.awaitTermination()
+except KeyboardInterrupt:
+    print("Shutting down Spark streaming query...")
+    query.stop()
+finally:
+    spark.stop()
+    clickhouse.close()

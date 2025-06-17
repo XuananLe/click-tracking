@@ -44,7 +44,7 @@ const SCENARIOS = {
       "SEARCH",
       "PRODUCT_VIEW",
       "PRICE_CHECK",
-      "EXTERNAL_LINK", // Check competitor
+      "EXTERNAL_LINK",
       "RETURN_VISIT",
       "PRODUCT_VIEW",
       "ADD_TO_CART",
@@ -65,7 +65,7 @@ async function generateScenario(scenarioName, scenario, userId = null) {
 
   for (let i = 0; i < scenario.events.length; i++) {
     const eventType = scenario.events[i]
-    const timestamp = new Date(baseTime + i * 30000 + Math.random() * 60000).toISOString() // 30s-90s between events
+    const timestamp = new Date(baseTime + i * 30000 + Math.random() * 60000).toISOString()
 
     let eventData = {
       timestamp,

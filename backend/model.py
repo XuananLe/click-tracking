@@ -1,10 +1,5 @@
 from pydantic import BaseModel
 from typing import Optional, List, Any
-from faker import Faker
-from pydantic import BaseModel
-from typing import Optional, List, Any
-
-fake = Faker()
 
 class Viewport(BaseModel):
     width: Optional[int] = None
@@ -14,7 +9,7 @@ class Data(BaseModel):
     pageType: Optional[str] = None
     productId: Optional[int] = None
     productName: Optional[str] = None
-    durationSeconds: Optional[int] = None
+    durationSeconds: Optional[int] =  None
     timestamp: Optional[str] = None
     sessionId: Optional[str] = None
     url: Optional[str] = None
@@ -80,15 +75,15 @@ SCENARIOS = {
     "BROWSER_SHOPPER": {
         "name": "Window Shopping",
         "events": [
-            "PAGE_VIEW", "CATEGORY_BROWSE", "PRODUCT_VIEW", "PRODUCT_VIEW", 
-            "PRODUCT_VIEW", "WISHLIST_ADD", "PAGE_EXIT"
+            "PAGE_VIEW", "CATEGORY_BROWSE", "PRODUCT_CLICK", "PRODUCT_CLICK", 
+            "PRODUCT_CLICK", "PAGE_EXIT"
         ],
     },
     "PRICE_COMPARISON": {
         "name": "Price Comparison Shopper",
         "events": [
             "PAGE_VIEW", "SEARCH", "PRODUCT_VIEW", "PRICE_CHECK", 
-            "EXTERNAL_LINK", "RETURN_VISIT", "PRODUCT_VIEW", "ADD_TO_CART"
+            "EXTERNAL_LINK", "RETURN_VISIT", "PRODUCT_CLICK", "ADD_TO_CART"
         ],
     },
     "MOBILE_QUICK_BUY": {
