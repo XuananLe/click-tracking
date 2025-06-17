@@ -46,73 +46,73 @@ clickhouse.command("CREATE DATABASE IF NOT EXISTS click_tracking")
 clickhouse.command("""
 CREATE TABLE IF NOT EXISTS click_tracking.click_tracking_events
 (
-    event_type String,
-    timestamp DateTime64(3),
-    session_id UUID,
-    user_id Nullable(UUID),
-    device_type String,
-    browser String,
-    os String,
-    user_agent String,
-    ip_address String,
-    geo_location_country String,
-    geo_location_city String,
-    client_timezone String,
-    connection_type String,
-    url Nullable(String),
-    path Nullable(String),
-    referrer Nullable(String),
-    page_type Nullable(String),
-    query Nullable(String),
-    results_count Nullable(UInt32),
-    filters_applied Array(Nullable(String)),
-    product_id Nullable(UInt32),
-    product_name Nullable(String),
-    category Nullable(String),
-    sub_type Nullable(String),
-    price Nullable(UInt32),
-    currency Nullable(String),
-    sku Nullable(String),
-    brand Nullable(String),
-    quantity Nullable(UInt32),
-    variant Nullable(String),
-    cart_value Nullable(Float64),
-    cart_items Nullable(String),
-    checkout_step Nullable(String),
-    step_number Nullable(UInt8),
-    payment_method Nullable(String),
-    amount Nullable(Float64),
-    order_id Nullable(UInt32),
-    order_value Nullable(Float64),
-    shipping_method Nullable(String),
-    shipping_cost Nullable(Float64),
-    tax_amount Nullable(Float64),
-    login_method Nullable(String),
-    login_success Nullable(UInt8),
-    review_rating Nullable(UInt8),
-    review_text Nullable(String),
-    share_platform Nullable(String),
-    share_url Nullable(String),
-    error_type Nullable(String),
-    error_message Nullable(String),
-    error_component Nullable(String),
-    filter_type Nullable(String),
-    filter_value Nullable(String),
-    filter_action Nullable(String),
-    promotion_id Nullable(UInt32),
-    promotion_name Nullable(String),
-    creative_id Nullable(String),
-    placement Nullable(String),
-    target_url Nullable(String),
-    element_id Nullable(String),
-    element_class Nullable(String),
-    element_type Nullable(String),
-    text_content Nullable(String),
-    position_x Nullable(UInt32),
-    position_y Nullable(UInt32),
-    session_duration_seconds Nullable(UInt32),
-    time_on_page Nullable(UInt32),
-    exit_reason Nullable(String)
+    `event_type` String,
+    `timestamp` DateTime64(3),
+    `session_id` String,
+    `user_id` Nullable(String),
+    `device_type` String,
+    `browser` String,
+    `os` String,
+    `user_agent` String,
+    `ip_address` String,
+    `geo_location_country` String,
+    `geo_location_city` String,
+    `client_timezone` String,
+    `connection_type` String,
+    `url` Nullable(String),
+    `path` Nullable(String),
+    `referrer` Nullable(String),
+    `page_type` Nullable(String),
+    `query` Nullable(String),
+    `results_count` Nullable(UInt32),
+    `filters_applied` Nullable(String),
+    `product_id` Nullable(UInt32),
+    `product_name` Nullable(String),
+    `category` Nullable(String),
+    `sub_type` Nullable(String),
+    `price` Nullable(UInt32),
+    `currency` Nullable(String),
+    `sku` Nullable(String),
+    `brand` Nullable(String),
+    `quantity` Nullable(UInt32),
+    `variant` Nullable(String),
+    `cart_value` Nullable(Float64),
+    `cart_items` Nullable(String),
+    `checkout_step` Nullable(String),
+    `step_number` Nullable(UInt8),
+    `payment_method` Nullable(String),
+    `amount` Nullable(Float64),
+    `order_id` Nullable(UInt32),
+    `order_value` Nullable(Float64),
+    `shipping_method` Nullable(String),
+    `shipping_cost` Nullable(Float64),
+    `tax_amount` Nullable(Float64),
+    `login_method` Nullable(String),
+    `login_success` Nullable(UInt8),
+    `review_rating` Nullable(UInt8),
+    `review_text` Nullable(String),
+    `share_platform` Nullable(String),
+    `share_url` Nullable(String),
+    `error_type` Nullable(String),
+    `error_message` Nullable(String),
+    `error_component` Nullable(String),
+    `filter_type` Nullable(String),
+    `filter_value` Nullable(String),
+    `filter_action` Nullable(String),
+    `promotion_id` Nullable(UInt32),
+    `promotion_name` Nullable(String),
+    `creative_id` Nullable(String),
+    `placement` Nullable(String),
+    `target_url` Nullable(String),
+    `element_id` Nullable(String),
+    `element_class` Nullable(String),
+    `element_type` Nullable(String),
+    `text_content` Nullable(String),
+    `position_x` Nullable(UInt32),
+    `position_y` Nullable(UInt32),
+    `session_duration_seconds` Nullable(UInt32),
+    `time_on_page` Nullable(UInt32),
+    `exit_reason` Nullable(String)
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
@@ -120,11 +120,36 @@ ORDER BY (timestamp, session_id, event_type)
 SETTINGS index_granularity = 8192;
 """)
 
+packages = [
+    "org.apache.spark:spark-sql-kafka-0-10_2.13:3.5.3",
+    "com.clickhouse.spark:clickhouse-spark-runtime-3.5_2.13:0.8.1",
+    "com.clickhouse:clickhouse-client:0.7.0",
+    "com.clickhouse:clickhouse-http-client:0.7.0",
+    "org.apache.httpcomponents.client5:httpclient5:5.2.1"
+]
+
+
 spark = SparkSession.builder \
     .appName("Click-Tracking-Consuming") \
     .config("spark.driver.memory", "10g") \
-    .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0") \
+    .config("spark.jars.packages", ",".join(packages)) \
+    .config("spark.jars", "jars/clickhouse-jdbc-0.8.2-shaded-all.jar") \
     .getOrCreate()
+
+
+spark.conf.set("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+spark.conf.set("spark.sql.catalog.clickhouse.host", CLICKHOUSE_HOST)
+spark.conf.set("spark.sql.catalog.clickhouse.protocol", "https")
+spark.conf.set("spark.sql.catalog.clickhouse.http_port", "8443")
+spark.conf.set("spark.sql.catalog.clickhouse.option.ssl", True)
+spark.conf.set("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
+spark.conf.set("spark.sql.catalog.clickhouse.user", CLICKHOUSE_USERNAME)
+spark.conf.set("spark.sql.catalog.clickhouse.password", CLICKHOUSE_PASSWORD)
+spark.conf.set("spark.sql.catalog.clickhouse.database", "click_tracking")
+
+url = f"jdbc:clickhouse:https://{CLICKHOUSE_HOST}:8443?ssl=true"
+
+
 
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, BooleanType, ArrayType
 
@@ -290,17 +315,32 @@ def write_to_clickhouse(batch_df, batch_id):
         col("event.time_on_page").alias("time_on_page"),
         col("event.exit_reason").alias("exit_reason")
     )
-
+    
+    # flattened_df = flattened_df.withColumn("filters_applied", F.to_json(col("filters_applied")))    
+    flattened_df = flattened_df.withColumn(
+            "filters_applied",
+            F.concat(
+                lit("['"),
+                F.concat_ws("','", col("filters_applied")),
+                lit("']")
+            )
+        )
+    flattened_df = flattened_df.withColumn("session_id", col("session_id").cast("string"))
+    flattened_df = flattened_df.withColumn("user_id", col("user_id").cast("string"))    
+    
     try:
-        if not flattened_df.isEmpty():
-            batch = flattened_df.collect()
-            if batch:
-                batch_data = [[row[field] for field in flattened_df.columns] for row in batch]
-                print(batch_data[len(batch_data) - 1])
-                clickhouse.insert('click_tracking.click_tracking_events', batch_data, column_names=flattened_df.columns)
-                print(f"Inserted {len(batch_data)} events into ClickHouse (batch {batch_id}).")
-            else:
-                print(f"No data to insert for batch {batch_id}.")
+        if not flattened_df.rdd.isEmpty():
+            flattened_df.write \
+                .format("jdbc") \
+                .option("url", url) \
+                .option("user", os.getenv("CLICKHOUSE_USERNAME")) \
+                .option("password", os.getenv("CLICKHOUSE_PASSWORD")) \
+                .option("driver", "com.clickhouse.jdbc.ClickHouseDriver") \
+                .option("dbtable", "click_tracking.click_tracking_events") \
+                .mode("append") \
+                .save()
+            
+            print(f"Inserted {flattened_df.count()} events into ClickHouse (batch {batch_id}).")
         else:
             print(f"Batch {batch_id} is empty.")
     except Exception as e:
@@ -318,8 +358,8 @@ kafka_df = spark.readStream \
         "kafka.sasl.jaas.config",
         f"""org.apache.kafka.common.security.plain.PlainLoginModule required username="{CONFLUENT_API_KEY}" password="{CONFLUENT_API_SECRET}";"""
     ) \
-    .option("rowsPerBatch", "10000") \
-    .option("maxOffsetsPerTrigger", "100000") \
+    .option("rowsPerBatch", "400000") \
+    .option("maxOffsetsPerTrigger", "400000") \
     .load()
 
 kafka_df = kafka_df.selectExpr("CAST(value AS STRING)")

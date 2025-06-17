@@ -331,6 +331,8 @@ def generate_scenario_events(scenario_name, user_id):
 
     return events
 
+import numpy as np
+
 def generate_scenarios(num_scenarios=2000):
     all_events = []
     scenario_names = [
@@ -338,14 +340,19 @@ def generate_scenarios(num_scenarios=2000):
         "PRODUCT_SHARE", "ERROR_ENCOUNTER", "FULL_JOURNEY", "PROMO_INTERACTION",
         "CART_ABANDONMENT", "GENERAL_INTERACTION"
     ]
+    
+    scenario_names_array = np.array(scenario_names)
+    user_ids = np.array([None, *[uuid4() for _ in range(num_scenarios - 1)]])
+    user_ids_choice = np.random.choice(user_ids, num_scenarios)
 
-    for _ in range(num_scenarios):
-        scenario_name = random_choice(scenario_names)
-        user_id = random_choice([None, uuid4()])
+    scenario_names_choice = np.random.choice(scenario_names_array, num_scenarios)
+
+    for scenario_name, user_id in zip(scenario_names_choice, user_ids_choice):
         scenario_events = generate_scenario_events(scenario_name, user_id)
         all_events.extend(scenario_events)
 
     return all_events
+
 
 import os
 CONFLUENT_API_KEY = os.getenv("CONFLUENT_API_KEY")
